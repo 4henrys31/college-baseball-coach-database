@@ -1,52 +1,88 @@
-import argparse
+import os
 import json
-from pathlib import Path
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime
 
-from .db import connect, init_db, upsert_coach
-from .scraper import load_seed_csv, scrape_school
-from .sheets import ensure_tabs, sync_all
-from .validate import validate_rows
-from .schema import COACH_COLUMNS
+SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
+SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-def run(seed_csv: str, dry_run: bool = False):
-    conn = connect()
-    init_db(conn)
-    schools = load_seed_csv(seed_csv)
-    all_rows = []
-    for school in schools:
-        all_rows.extend(scrape_school(school))
-    for row in all_rows:
-        upsert_coach(conn, row)
-    conn.commit()
-    validation = validate_rows(all_rows)
-    if dry_run:
-        Path('reports').mkdir(exist_ok=True)
-        Path('reports/latest_rows.json').write_text(json.dumps(all_rows, indent=2), encoding='utf-8')
-        Path('reports/latest_validation.json').write_text(json.dumps(validation, indent=2), encoding='utf-8')
-        print(f'DRY RUN COMPLETE: {len(all_rows)} coach rows, {len(validation)} validation issues.')
-    else:
-        sync_all(all_rows, validation_rows=validation, changelog_rows=[])
-        print(f'SYNC COMPLETE: {len(all_rows)} coach rows pushed to Google Sheets.')
+creds_dict = json.loads(SERVICE_ACCOUNT_JSON)
+creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+client = gspread.authorize(creds)
 
+sheet = client.open_by_key(SPREADSHEET_ID)
 
-def init_sheet():
-    ensure_tabs()
-    print('Google Sheet tabs are ready.')
+try:
+    worksheet = sheet.worksheet("Master Database")
+except gspread.WorksheetNotFound:
+    worksheet = sheet.add_worksheet(title="Master Database", rows=1000, cols=30)
 
+headers = [
+    "Division",
+    "School",
+    "State",
+    "Conference",
+    "Coach First Name",
+    "Coach Last Name",
+    "Title",
+    "Role Category",
+    "Email",
+    "Phone",
+    "Athletics Website",
+    "Baseball Page URL",
+    "Staff Directory URL",
+    "Source URL",
+    "Last Verified Date",
+    "Data Status",
+    "Contacted?",
+    "Date Contacted",
+    "Contact Method",
+    "Follow-Up Date",
+    "Follow-Up Status",
+    "Camp Invite Sent?",
+    "Clinic Invite Sent?",
+    "Player Interest Level",
+    "Coach Response",
+    "Next Action",
+    "Notes",
+    "Do Not Contact?"
+]
 
-def cli():
-    parser = argparse.ArgumentParser(description='College Baseball Coach Recruiting Database')
-    sub = parser.add_subparsers(dest='command', required=True)
-    p_run = sub.add_parser('run')
-    p_run.add_argument('--seed', default='data/seeds/schools_sample.csv')
-    p_run.add_argument('--dry-run', action='store_true')
-    sub.add_parser('init-sheet')
-    args = parser.parse_args()
-    if args.command == 'run':
-        run(args.seed, args.dry_run)
-    elif args.command == 'init-sheet':
-        init_sheet()
+worksheet.clear()
+worksheet.append_row(headers)
 
-if __name__ == '__main__':
-    cli()
+worksheet.append_row([
+    "TEST",
+    "Test University",
+    "TX",
+    "Test Conference",
+    "John",
+    "Doe",
+    "Head Baseball Coach",
+    "Head Coach",
+    "test@example.com",
+    "555-555-5555",
+    "https://example.com",
+    "https://example.com/baseball",
+    "https://example.com/staff",
+    "https://example.com/source",
+    datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+    "Connection Test",
+    "No",
+    "",
+    "",
+    "",
+    "",
+    "No",
+    "No",
+    "",
+    "",
+    "",
+    "Google Sheets connection test row",
+    "No"
+])
+
+print("Google Sheet connection test completed successfully.")
