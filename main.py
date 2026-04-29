@@ -4,85 +4,75 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
-SERVICE_ACCOUNT_JSON = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+print("Starting Google Sheets diagnostic test...")
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+spreadsheet_id = os.getenv("SPREADSHEET_ID")
+service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 
-creds_dict = json.loads(SERVICE_ACCOUNT_JSON)
-creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-client = gspread.authorize(creds)
+if not spreadsheet_id:
+    raise ValueError("Missing SPREADSHEET_ID secret.")
 
-sheet = client.open_by_key(SPREADSHEET_ID)
+if not service_account_json:
+    raise ValueError("Missing GOOGLE_SERVICE_ACCOUNT_JSON secret.")
+
+print("SPREADSHEET_ID found.")
+print(f"SPREADSHEET_ID starts with: {spreadsheet_id[:8]}...")
 
 try:
-    worksheet = sheet.worksheet("Master Database")
-except gspread.WorksheetNotFound:
-    worksheet = sheet.add_worksheet(title="Master Database", rows=1000, cols=30)
+    creds_dict = json.loads(service_account_json)
+    print("Service account JSON loaded successfully.")
+    print(f"Service account email: {creds_dict.get('client_email')}")
+except Exception as e:
+    raise ValueError(f"Could not parse GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
 
-headers = [
-    "Division",
-    "School",
-    "State",
-    "Conference",
-    "Coach First Name",
-    "Coach Last Name",
-    "Title",
-    "Role Category",
-    "Email",
-    "Phone",
-    "Athletics Website",
-    "Baseball Page URL",
-    "Staff Directory URL",
-    "Source URL",
-    "Last Verified Date",
-    "Data Status",
-    "Contacted?",
-    "Date Contacted",
-    "Contact Method",
-    "Follow-Up Date",
-    "Follow-Up Status",
-    "Camp Invite Sent?",
-    "Clinic Invite Sent?",
-    "Player Interest Level",
-    "Coach Response",
-    "Next Action",
-    "Notes",
-    "Do Not Contact?"
-]
+scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 
-worksheet.clear()
-worksheet.append_row(headers)
+try:
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(credentials)
+    print("Google authorization successful.")
+except Exception as e:
+    raise RuntimeError(f"Google authorization failed: {e}")
 
-worksheet.append_row([
-    "TEST",
-    "Test University",
-    "TX",
-    "Test Conference",
-    "John",
-    "Doe",
-    "Head Baseball Coach",
-    "Head Coach",
-    "test@example.com",
-    "555-555-5555",
-    "https://example.com",
-    "https://example.com/baseball",
-    "https://example.com/staff",
-    "https://example.com/source",
-    datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-    "Connection Test",
-    "No",
-    "",
-    "",
-    "",
-    "",
-    "No",
-    "No",
-    "",
-    "",
-    "",
-    "Google Sheets connection test row",
-    "No"
-])
+try:
+    spreadsheet = client.open_by_key(spreadsheet_id)
+    print(f"Opened spreadsheet successfully: {spreadsheet.title}")
+except Exception as e:
+    raise RuntimeError(f"Could not open spreadsheet. Check Sheet ID and sharing permissions: {e}")
 
-print("Google Sheet connection test completed successfully.")
+try:
+    worksheets = spreadsheet.worksheets()
+    print("Existing worksheet tabs:")
+    for ws in worksheets:
+        print(f"- {ws.title}")
+except Exception as e:
+    raise RuntimeError(f"Could not list worksheets: {e}")
+
+test_tab_name = "Connection Test"
+
+try:
+    try:
+        worksheet = spreadsheet.worksheet(test_tab_name)
+        print("Connection Test tab already exists.")
+    except gspread.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(title=test_tab_name, rows=100, cols=10)
+        print("Connection Test tab created.")
+
+    worksheet.clear()
+    worksheet.update(
+        "A1:D2",
+        [
+            ["Status", "Timestamp", "Spreadsheet Title", "Message"],
+            [
+                "SUCCESS",
+                datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+                spreadsheet.title,
+                "GitHub Actions successfully wrote to Google Sheets.",
+            ],
+        ],
+    )
+
+    print("Diagnostic write completed successfully.")
+
+except Exception as e:
+    raise RuntimeError(f"Could not write to spreadsheet: {e}")
